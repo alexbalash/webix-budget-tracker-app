@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Webix Budget Tracker</title>
+  <meta charset="utf-8">
+
+  <!-- Webix sources -->
+  <script type="text/javascript" src="https://cdn.webix.com/edge/webix.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://cdn.webix.com/edge/webix.css">
+  <link rel="stylesheet" href="https://cdn.materialdesignicons.com/2.7.94/css/materialdesignicons.css?v=8.1.0"
+    type="text/css">
+  <link href="styles.css" rel="stylesheet">
+  <script src="./data/budget_tracker_data.js"></script>
+</head>
+
+<body>
+  <script type="text/javascript">
+
+    webix.ui.fullScreen();
+
+    let options = [
+      {
+        id: 1,
+        value: "This month",
+      },
+      {
+        id: 2,
+        value: "This year",
+      },
+      {
+        id: 3,
+        value: "Last 12 month",
+      },
+      {
+        id: 4,
+        value: "All",
+      },
+    ];
+
+    function filterByDate(value) {
+      let filterer;
+
+      switch (value) {
+        case "1":
+          filterer = isThisMonth;
+          break;
+        case "2":
+          filterer = isThisYear;
+          break;
+        case "3":
+          filterer = isLast12Months;
+          break;
+        case "4":
+          filterer = null;
+          break;
+      }
+
+      budget.filter(filterer);
+    }
+
+    const budget = new webix.DataCollection({
+      data: webix.storage.session.get("money-data") || data,
+      on: {
+        "data->onStoreUpdated": function (obj, id, mode) {
+          if (mode) {
+            webix.storage.session.put("money-data", this.serialize());
+
+            filterByDate(
+              $$("select")
+                ? $$("select").getValue()
+                : $$("radio").getValue()
+            );
+          }
+        }
+      },
+      scheme: {
+        $init: (obj) => {
+          // by default, if the user didn't set the date, let's consider it's today
+          if (!obj.date) obj.date = new Date();
+          if (typeof obj.date === "string") obj.date = new Date(obj.date);
+        },
+      },
+    });
+
+    const types = new webix.DataCollection({
+      data: [
+        {
+          id: 1,
+          value: "Income",
+        },
+        {
+          id: 2,
+          value: "Expense",
+        },
+      ],
+    });
+    const categories = new webix.DataCollection({
+      data: [
+        {
+          id: 1,
+          value: "Food",
+        },
+        {
+          id: 2,
+          value: "Rent",
+        },
+        {
+          id: 3,
+          value: "Shopping",
+        },
+        {
+          id: 4,
+          value: "Deposit",
+        },
+        {
+          id: 5,
+          value: "Gifts",
+        },
+        {
+          id: 6,
+          value: "Salary",
+        },
+        {
+          id: 7,
+          value: "Credit",
+        },
+        {
+          id: 8,
+          value: "Transportation",
+        },
+        {
+          id: 9,
+          value: "Pets",
+        },
+        {
+          id: 10,
+          value: "Pharmacy",
+        },
+      ],
+    });
+
+    const tabbar = {
+      view: "tabbar",
+      id: "tabbar",
+      type: "bottom",
+      multiview: true,
+      options: [
+        {
+          value: "Form",
+          id: "formView",
+        },
+        {
+          value: "Income",
+          id: "incomeView",
+        },
+        {
+          value: "Expense",
+          id: "expenseView",
+        },
+      ],
+      height: 50,
+    };
+
+    const myformat = webix.Date.dateToStr("%Y-%m-%d");
+
+    const list = {
+      view: "list",
+      id: "list",
+      editable: true,
+      editor: "text",
+      select: true,
+      type: {
+        height: 55,
+        templateStart: (obj, common, marks) => {
+          const css = types.getItem(obj.type).value.toLowerCase();
+          return `<div webix_l_id='${obj.id}' id=${obj.id} class='${common.classname(
+            obj,
+            common,
+            marks
+          )} custom_item ${css}'>`;
+        },
+        template: (obj) => {
+          return `<div class='flex category'>${categories.getItem(obj.category).value
+            } 
+<div class='delete_icon webix_icon mdi mdi-delete'></div>
+</div>
+<div class='flex'>
+<span class='date'>${myformat(obj.date)}</span> 
+<span class='value'>${obj.value}$</span>
+</div>`;
+        },
+        templateEnd: "</div>",
+      },
+      onClick: {
+        delete_icon: (e, id) => removeItem(id),
+      },
+    };
+
+    const form = {
+      view: "form",
+      id: "form",
+      elements: [
+        {
+          view: "datepicker",
+          name: "date",
+          label: "Date",
+          suggest: {
+            type: "calendar",
+            body: {
+              maxDate: new Date(),
+            },
+          },
+        },
+        {
+          view: "select",
+          name: "type",
+          label: "Type",
+          options: types,
+          required: true,
+          invalidMessage: "Please, select an option",
+        },
+        {
+          view: "select",
+          name: "category",
+          label: "Category",
+          options: categories,
+          required: true,
+          invalidMessage: "Please, select an option",
+        },
+        {
+          view: "text",
+          label: "Value",
+          name: "value",
+          validate: webix.rules.isNumber,
+          type: "number",
+          required: true,
+          invalidMessage: "Please, enter a number",
+        },
+        {
+          margin: 5,
+          cols: [
+            {
+              view: "button",
+              label: "Clear",
+              click: () => $$("list").unselect(),
+            },
+            {
+              view: "button",
+              label: "Save",
+              click: saveItem,
+              css: "webix_primary",
+            },
+          ],
+        },
+      ],
+    };
+
+    const getChart = (id, palette) => {
+      return {
+        view: "chart",
+        type: "pie",
+        id,
+        value: "#money#",
+        label: (obj) => categories.getItem(obj.category).value,
+        pieInnerText: "#money#$",
+        shadow: 0,
+        color: (item, i) => palette[i],
+      };
+    };
+
+    const categoriesNumber = categories.count();
+    const paletteI = getColorPalette("#FCBA2E", categoriesNumber);
+    const paletteE = getColorPalette("#8b55e7", categoriesNumber);
+    const chartIncome = getChart("incomeView", paletteI);
+    const chartExpenses = getChart("expenseView", paletteE);
+
+    const multiview = {
+      cells: [
+        {
+          id: "formView",
+          rows: [list, form],
+        },
+        chartIncome,
+        chartExpenses,
+      ],
+    };
+
+    function isThisMonth(obj) {
+      const now = new Date();
+      return (
+        now.getMonth() === obj.date.getMonth() &&
+        now.getFullYear() === obj.date.getFullYear()
+      );
+    }
+
+    function isThisYear(obj) {
+      const now = new Date();
+      return now.getFullYear() === obj.date.getFullYear();
+    }
+
+    function isLast12Months(obj) {
+      const now = webix.Date.dayStart(new Date());
+      const end = webix.Date.add(now, 1, "day", true);
+      const start = webix.Date.add(end, -12, "month", true);
+      return start <= obj.date && obj.date < end;
+    }
+
+    const select = {
+      view: "select",
+      id: "select",
+      label: "Show",
+      value: 1,
+      options: options,
+      on: {
+        onChange: v => filterByDate(v)
+      },
+    };
+
+    const radio = {
+      id: "radio",
+      view: "radio",
+      label: "Show",
+      css: "chart_radio",
+      options: options,
+      on: {
+        onChange: v => filterByDate(v)
+      },
+    };
+
+    const smallUI = {
+      id: "top",
+      rows: [
+        multiview,
+        {
+          type: "form",
+          rows: [select],
+        },
+        tabbar,
+      ],
+    };
+    const bigUI = {
+      id: "top",
+      type: "space",
+      cols: [
+        {
+          maxWidth: 300,
+          type: "wide",
+          rows: [form, list],
+        },
+        {
+          type: "wide",
+          rows: [
+            radio,
+            {
+              rows: [
+                {
+                  template: "Income",
+                  type: "header",
+                },
+                chartIncome,
+              ],
+            },
+            {
+              rows: [
+                {
+                  template: "Expenses",
+                  type: "header",
+                },
+                chartExpenses,
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const getSize = () => (document.body.offsetWidth > 700 ? "wide" : "small");
+    let currentSize = getSize();
+    const buildUI = () =>
+      webix.ui(currentSize === "small" ? smallUI : bigUI, $$("top"));
+
+    webix.ready(() => {
+      webix.event(window, "resize", function () {
+        const newSize = getSize();
+        if (newSize != currentSize) {
+          currentSize = newSize;
+          $$("form").unbind($$("list"));
+          buildUI();
+          synchronize();
+        }
+      });
+
+      webix.ui({
+        rows: [
+          {
+            template: "Budget Tracker",
+            type: "header",
+            css: "webix_dark",
+          },
+          currentSize === "small" ? smallUI : bigUI,
+        ],
+      });
+
+      synchronize();
+    });
+
+    function saveItem() {
+      const form = $$("form");
+      if (form.validate()) {
+        const values = form.getValues();
+        if (values.id) budget.updateItem(values.id, values);
+        else {
+          const id = budget.add(values, 0);
+          $$("list").select(id);
+        }
+      }
+    }
+
+    function removeItem(id) {
+      webix
+        .confirm({
+          title: "Entry will be deleted permanently",
+          text: "Do you still want to continue?",
+          type: "confirm-warning",
+        })
+        .then(() => {
+          budget.remove(id);
+        });
+      return false;
+    }
+
+    function prepareChartData(type) {
+      this.filter("type", type);
+      this.group({
+        by: "category",
+        map: {
+          money: ["value", "sum"],
+        },
+      });
+    }
+
+    function synchronize() {
+      const list = $$("list");
+
+      list.sync(budget);
+      $$("incomeView").sync(budget, function () {
+        prepareChartData.call(this, 1);
+      });
+      $$("expenseView").sync(budget, function () {
+        prepareChartData.call(this, 2);
+      });
+      if ($$("radio")) $$("radio").setValue(1);
+
+      $$("form").bind(list);
+    }
+
+    function getColorPalette(baseColor, count) {
+      const colors = [baseColor];
+      if (count > 1) {
+        const c = webix.color;
+        const rgb = c.toRgb(baseColor);
+        const hsv = c.rgbToHsv(rgb[0], rgb[1], rgb[2]);
+        const f = hsv[1] * 0.8 / (count - 1);
+        for (let i = 1; i < count; i++) {
+          const rgb = "rgb(" + c.hsvToRgb(hsv[0], hsv[1] - f * i * 2, hsv[2]) + ")";
+          colors.push("#" + c.rgbToHex(rgb));
+        }
+      }
+      return colors;
+    }
+  </script>
+</body>
+
+</html>
